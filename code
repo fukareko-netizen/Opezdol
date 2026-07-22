@@ -12,10 +12,11 @@ from telegram.ext import (
 
 # Настройка логирования
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
     level=logging.INFO
 )
 
+# Замени на свой токен от @BotFather
 TOKEN = "8816116192:AAGubnMYU3Q1U-m0qnuv-rimEOeaGY0xkk0"
 
 # Состояние для смены имени
@@ -24,14 +25,12 @@ WAITING_FOR_NAME = 1
 # Данные опездола
 pet_stats = {
     "name": "Опездол",
-    "fullness": 100,  # Сытость (в %)
-    "thirst": 100,  # Жажда (в %)
-    "mood": 100,  # Настроение (в %)
-    "happiness": 100,  # Счастье (в %)
-    "pee_need": "Не хочет",  # Потребность пописить
-    "poop_need": "Не хочет"  # Потребность покакать
+    "fullness": 100,        # Сытость (в %)
+    "thirst": 100,          # Жажда (в %)
+    "mood": "Отличное",     # Настроение
+    "pee_need": "Не хочет", # Потребность пописить
+    "poop_need": "Не хочет" # Потребность покакать
 }
-
 
 # Главное меню управления опездолом
 def get_opezdol_keyboard():
@@ -48,15 +47,14 @@ def get_opezdol_keyboard():
             InlineKeyboardButton("Писясть 🚽", callback_data="stat_pee"),
         ],
         [
-            InlineKeyboardButton("Нежность 🪶", callback_data="menu_tenderness"),
-            InlineKeyboardButton("Игривость 🧸", callback_data="menu_playfulness"),
+            InlineKeyboardButton("Нежность 🪶", callback_data="stat_tenderness"),
+            InlineKeyboardButton("Игривость 🧸", callback_data="stat_playfulness"),
         ],
         [
             InlineKeyboardButton("Имя ✏️", callback_data="stat_name"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
-
 
 # Меню выбора еды
 def get_food_keyboard():
@@ -79,7 +77,6 @@ def get_food_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-
 # Меню выбора напитков
 def get_drink_keyboard():
     keyboard = [
@@ -101,72 +98,21 @@ def get_drink_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-
-# Меню «Нежность»
-def get_tenderness_keyboard():
-    keyboard = [
-        [
-            InlineKeyboardButton("💋 Поцеловать", callback_data="tender_Поцеловать"),
-            InlineKeyboardButton("🫂 Обнять", callback_data="tender_Обнять"),
-        ],
-        [
-            InlineKeyboardButton("🫳 Погладить", callback_data="tender_Погладить"),
-            InlineKeyboardButton("💬 Комплимент", callback_data="tender_Комплимент"),
-        ],
-        [
-            InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu"),
-        ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-# Меню «Игривость»
-def get_playfulness_keyboard():
-    keyboard = [
-        [
-            InlineKeyboardButton("⚽ Мячик", callback_data="play_Мячик"),
-            InlineKeyboardButton("🪵 Палка", callback_data="play_Палка"),
-        ],
-        [
-            InlineKeyboardButton("🍆 Дилдо", callback_data="play_Дилдо"),
-            InlineKeyboardButton("🎮 Дота", callback_data="play_Дота"),
-        ],
-        [
-            InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu"),
-        ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-# Проверка туалета раз в 12 часов (43200 сек)
+# Проверка туалета каждые 2 часа (7200 сек)
 async def check_toilet_needs(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
-
+    
     pet_stats["pee_need"] = "Очень хочет!"
     pet_stats["poop_need"] = "Очень хочет!"
 
     await context.bot.send_message(
-        chat_id=chat_id,
+        chat_id=chat_id, 
         text=f"🚨 {pet_stats['name']} хочет ссать!"
     )
     await context.bot.send_message(
-        chat_id=chat_id,
+        chat_id=chat_id, 
         text=f"🚨 {pet_stats['name']} хочет срать!"
     )
-
-
-# Уменьшение настроения раз в 2 часа (7200 сек)
-async def decrease_mood_2hours(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-
-    pet_stats["mood"] = max(0, pet_stats["mood"] - 10)
-
-    if pet_stats["mood"] <= 20:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"😔 У {pet_stats['name']} плохое настроение ({pet_stats['mood']}%)! Пожалейте его."
-        )
-
 
 # Уменьшение голода и жажды каждый час (3600 сек)
 async def decrease_stats_hourly(context: ContextTypes.DEFAULT_TYPE):
@@ -186,45 +132,34 @@ async def decrease_stats_hourly(context: ContextTypes.DEFAULT_TYPE):
             text=f"⚠️ {pet_stats['name']} хочет пить! Жажда: {pet_stats['thirst']}%"
         )
 
-
 # Запуск фоновых таймеров
 def start_timers(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-    # 1. Таймер туалета раз в 12 часов (43200 секунд)
+    if context.job_queue is None:
+        return
+
+    # 1. Таймер туалета (каждые 2 часа)
     toilet_job_name = f"toilet_job_{chat_id}"
     for job in context.job_queue.get_jobs_by_name(toilet_job_name):
         job.schedule_removal()
     context.job_queue.run_repeating(
-        check_toilet_needs,
-        interval=43200,
-        first=43200,
-        chat_id=chat_id,
+        check_toilet_needs, 
+        interval=7200, 
+        first=7200, 
+        chat_id=chat_id, 
         name=toilet_job_name
     )
 
-    # 2. Таймер настроения раз в 2 часа (7200 секунд)
-    mood_job_name = f"mood_job_{chat_id}"
-    for job in context.job_queue.get_jobs_by_name(mood_job_name):
-        job.schedule_removal()
-    context.job_queue.run_repeating(
-        decrease_mood_2hours,
-        interval=7200,
-        first=7200,
-        chat_id=chat_id,
-        name=mood_job_name
-    )
-
-    # 3. Таймер каждый час (3600 секунд) - голод и жажда
+    # 2. Таймер снижения характеристик (каждый час = 3600 сек)
     stats_job_name = f"stats_job_{chat_id}"
     for job in context.job_queue.get_jobs_by_name(stats_job_name):
         job.schedule_removal()
     context.job_queue.run_repeating(
-        decrease_stats_hourly,
-        interval=3600,
-        first=3600,
-        chat_id=chat_id,
+        decrease_stats_hourly, 
+        interval=3600, 
+        first=3600, 
+        chat_id=chat_id, 
         name=stats_job_name
     )
-
 
 # Команда /pet
 async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -237,35 +172,32 @@ async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "Привет пиздюки! Дитя захотели?",
+        "Привет пиздюки! Дитя захотели?", 
         reply_markup=reply_markup
     )
-
 
 # Команда /opezdol
 async def opezdol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_timers(context, update.effective_chat.id)
 
     await update.message.reply_text(
-        "Здесь разукрась его как хочешь",
+        "Здесь разукрась его как хочешь", 
         reply_markup=get_opezdol_keyboard()
     )
-
 
 # Нажатие на "Сменить имя"
 async def start_change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
+    
     await query.message.reply_text("Введи новое имя для своего опездола:")
     return WAITING_FOR_NAME
-
 
 # Сохранение нового имени
 async def save_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_name = update.message.text.strip()
     pet_stats["name"] = new_name
-
+    
     await update.message.reply_text(
         f"🎉 Ура! Теперь опездола зовут: **{new_name}**",
         parse_mode="Markdown",
@@ -273,29 +205,26 @@ async def save_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-
 # Главный обработчик кнопок
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
 
     if query.data == "no":
-        await query.answer()
         await query.edit_message_text("Ну и пошли вы нахуй!")
-
+        
     elif query.data == "yes":
-        await query.answer()
         await query.edit_message_text(
             "Ваш опездол родился! управляйте им через команду /opezdol"
         )
         start_timers(context, query.message.chat.id)
 
         await query.message.reply_text(
-            "Здесь разукрась его как хочешь",
+            "Здесь разукрась его как хочешь", 
             reply_markup=get_opezdol_keyboard()
         )
 
     elif query.data == "back_to_menu":
-        await query.answer()
         await query.edit_message_text(
             "Здесь разукрась его как хочешь",
             reply_markup=get_opezdol_keyboard()
@@ -303,7 +232,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Раздел Еды
     elif query.data == "menu_food":
-        await query.answer()
         await query.edit_message_text(
             f"🍖 Чем покормим **{pet_stats['name']}**?\nТекущая сытость: {pet_stats['fullness']}%",
             parse_mode="Markdown",
@@ -315,7 +243,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pet_stats["fullness"] >= 100:
             await query.answer("Опездол уже полностью сыт!", show_alert=True)
         else:
-            await query.answer()
             pet_stats["fullness"] = min(100, pet_stats["fullness"] + 10)
             await query.edit_message_text(
                 f"😋 {pet_stats['name']} съел **{food_item}** (+10% сытости)!\n"
@@ -326,7 +253,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Раздел Напитков
     elif query.data == "menu_drink":
-        await query.answer()
         await query.edit_message_text(
             f"💧 Чем напоим **{pet_stats['name']}**?\nТекущая жажда: {pet_stats['thirst']}%",
             parse_mode="Markdown",
@@ -338,7 +264,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pet_stats["thirst"] >= 100:
             await query.answer("Опездол уже не хочет пить!", show_alert=True)
         else:
-            await query.answer()
             pet_stats["thirst"] = min(100, pet_stats["thirst"] + 10)
             await query.edit_message_text(
                 f"🥤 {pet_stats['name']} выпил **{drink_item}** (+10% жажды)!\n"
@@ -347,105 +272,57 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_drink_keyboard()
             )
 
-    # Раздел Нежности
-    elif query.data == "menu_tenderness":
-        await query.answer()
-        await query.edit_message_text(
-            f"🪶 Как проявим нежность к **{pet_stats['name']}**?\nТекущее настроение: {pet_stats['mood']}%",
-            parse_mode="Markdown",
-            reply_markup=get_tenderness_keyboard()
-        )
-
-    elif query.data.startswith("tender_"):
-        action = query.data.split("_")[1]
-        if pet_stats["mood"] >= 100:
-            await query.answer("У опездола уже максимальное настроение!", show_alert=True)
-        else:
-            await query.answer()
-            pet_stats["mood"] = min(100, pet_stats["mood"] + 5)
-            await query.edit_message_text(
-                f"💖 Действие **{action}** подняло настроение **{pet_stats['name']}** на +5%!\n"
-                f"🎭 Текущее настроение: {pet_stats['mood']}%",
-                parse_mode="Markdown",
-                reply_markup=get_tenderness_keyboard()
-            )
-
-    # Раздел Игривости
-    elif query.data == "menu_playfulness":
-        await query.answer()
-        await query.edit_message_text(
-            f"🧸 Во что поиграем с **{pet_stats['name']}**?\nТекущее счастье: {pet_stats['happiness']}%",
-            parse_mode="Markdown",
-            reply_markup=get_playfulness_keyboard()
-        )
-
-    elif query.data.startswith("play_"):
-        game_item = query.data.split("_")[1]
-        if pet_stats["happiness"] >= 100:
-            await query.answer("Опездол максимально счастлив!", show_alert=True)
-        else:
-            await query.answer()
-            pet_stats["happiness"] = min(100, pet_stats["happiness"] + 5)
-            await query.edit_message_text(
-                f"🎉 Игра **{game_item}** подняла счастье **{pet_stats['name']}** на +5%!\n"
-                f"✨ Текущее счастье: {pet_stats['happiness']}%",
-                parse_mode="Markdown",
-                reply_markup=get_playfulness_keyboard()
-            )
-
     # Имя
     elif query.data == "stat_name":
-        await query.answer()
         keyboard = [
             [InlineKeyboardButton("Сменить имя ✏️", callback_data="change_name_action")],
             [InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            f"Текущее имя опездола: **{pet_stats['name']}**",
+            f"Текущее имя опездола: **{pet_stats['name']}**", 
             parse_mode="Markdown",
             reply_markup=reply_markup
         )
 
     # Профиль (Личность)
     elif query.data == "stat_profile":
-        await query.answer()
         profile_text = (
             f"📋 **Карточка опездола:**\n\n"
             f"👤 **Имя:** {pet_stats['name']}\n"
             f"🍖 **Сытость:** {pet_stats['fullness']}%\n"
             f"💧 **Жажда:** {pet_stats['thirst']}%\n"
-            f"🎭 **Настроение:** {pet_stats['mood']}%\n"
-            f"✨ **Счастье:** {pet_stats['happiness']}%\n"
+            f"🎭 **Настроение:** {pet_stats['mood']}\n"
             f"🚽 **Потребность пописять:** {pet_stats['pee_need']}\n"
             f"💩 **Потребность покакать:** {pet_stats['poop_need']}"
         )
         await query.message.reply_text(
-            profile_text,
+            profile_text, 
             parse_mode="Markdown",
             reply_markup=get_opezdol_keyboard()
         )
 
-    # Действия с туалетом
+    # Пописить / Покакать
     elif query.data == "stat_pee":
-        if pet_stats["pee_need"] == "Не хочет":
-            await query.answer(f"{pet_stats['name']} сейчас не хочет ссать!", show_alert=True)
-        else:
-            await query.answer()
-            pet_stats["pee_need"] = "Не хочет"
-            await query.message.reply_text(f"💦 {pet_stats['name']} сходил пописать и доволен!")
+        pet_stats["pee_need"] = "Не хочет"
+        await query.message.reply_text(f"💦 {pet_stats['name']} пописал и доволен!")
 
     elif query.data == "stat_poop":
-        if pet_stats["poop_need"] == "Не хочет":
-            await query.answer(f"{pet_stats['name']} сейчас не хочет срать!", show_alert=True)
-        else:
-            await query.answer()
-            pet_stats["poop_need"] = "Не хочет"
-            await query.message.reply_text(f"💩 {pet_stats['name']} сходил покакать и доволен!")
-
+        pet_stats["poop_need"] = "Не хочет"
+        await query.message.reply_text(f"💩 {pet_stats['name']} покакал и доволен!")
+        
+    elif query.data.startswith("stat_"):
+        stat_name = query.data.split("_")[1]
+        await query.answer(f"Нажата кнопка: {stat_name}", show_alert=True)
 
 def main():
-    app = Application.builder().token(TOKEN).build()
+    # Явно включаем поддержку JobQueue
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .job_queue(True)
+        .build()
+    )
 
     name_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_change_name, pattern="^change_name_action$")],
@@ -464,7 +341,6 @@ def main():
 
     print("Бот запущен!")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
