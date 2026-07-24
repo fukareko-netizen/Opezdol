@@ -1,5 +1,7 @@
 import logging
 import time
+import json
+import os
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -19,13 +21,36 @@ logging.basicConfig(
 )
 
 TOKEN = "8533045475:AAFzx_W8gM6ghEL10HfHlhzx_alEmsVmzTg"
+DB_FILE = "pets.json"
 
 WAITING_FOR_NAME = 1
 pets_data = {}
 
-# Скорость падения характеристик (в секундах)
-# 10.0 = каждые 10 секунд цифры меняются (для теста)
-INTERVAL_SECONDS = 1200.0 
+# --- РАБОТА С ФАЙЛОМ (СОХРАНЕНИЕ / ЗАГРУЗКА) ---
+def load_pets_data():
+    """Загружает данные из файла при запуске бота"""
+    global pets_data
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                # В JSON ключи всегда строки, превращаем их обратно в int (chat_id)
+                data = json.load(f)
+                pets_data = {int(k): v for k, v in data.items()}
+                print("💾 Данные опездолов успешно загружены из файла!")
+        except Exception as e:
+            print(f"Ошибка загрузки файла: {e}")
+            pets_data = {}
+
+def save_pets_data():
+    """Сохраняет данные в файл"""
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(pets_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Ошибка сохранения файла: {e}")
+
+# Скорость падения характеристик (10.0 сек для теста)
+INTERVAL_SECONDS = 360.0 
 
 def get_pet(chat_id: int) -> dict:
     if chat_id not in pets_data:
@@ -37,24 +62,20 @@ def get_pet(chat_id: int) -> dict:
             "is_sleeping": False,
             "pee_need": 0,
             "poop_need": 0,
-            "last_update": time.time()  # Фиксируем время создания
+            "last_update": time.time()
         }
+        save_pets_data()  # Сохраняем нового опездола
     return pets_data[chat_id]
 
 def update_pet_stats(chat_id: int):
-    """
-    Автоматически пересчитывает характеристики опездола 
-    на основе прошедшего с прошлого раза времени.
-    """
     pet = get_pet(chat_id)
     if pet["is_sleeping"]:
         pet["last_update"] = time.time()
+        save_pets_data()
         return
 
     now = time.time()
     elapsed = now - pet["last_update"]
-
-    # Сколько интервалов по 10 секунд прошло
     ticks = int(elapsed // INTERVAL_SECONDS)
 
     if ticks > 0:
@@ -63,9 +84,9 @@ def update_pet_stats(chat_id: int):
         pet["play_need"] = min(100, pet["play_need"] + (10 * ticks))
         pet["pee_need"] = min(100, pet["pee_need"] + (15 * ticks))
         pet["poop_need"] = min(100, pet["poop_need"] + (15 * ticks))
-        
-        # Обновляем время только на учтенные «тики»
         pet["last_update"] += ticks * INTERVAL_SECONDS
+        
+        save_pets_data()  # Сохраняем обновившиеся характеристики
 
 def get_mood_text(pet: dict) -> str:
     need = pet["play_need"]
@@ -176,7 +197,10 @@ async def save_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     pet = get_pet(chat_id)
     new_name = update.message.text.strip()
+    
+    # Меняем имя и сохраняем на диск
     pet["name"] = new_name
+    save_pets_data()
     
     await update.message.reply_text(
         f"🎉 Ура! Теперь опездола зовут: **{new_name}**",
@@ -189,7 +213,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
     
-    # ПЕРЕСЧИТЫВАЕМ СТАТИСТИКУ ПЕРЕД ЛЮБЫМ ДЕЙСТВИЕМ
     update_pet_stats(chat_id)
     pet = get_pet(chat_id)
     
@@ -208,7 +231,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_to_menu":
         await safe_edit_text(query, get_menu_text(pet), reply_markup=get_opezdol_keyboard(chat_id))
 
-    # --- 🪪 ЛИЧНОСТЬ ---
     elif query.data == "view_profile":
         status_sleep = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
         profile_text = (
@@ -224,7 +246,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await safe_edit_text(query, profile_text, reply_markup=get_opezdol_keyboard(chat_id))
 
-    # --- 🍎 ГОЛОД ---
     elif query.data == "view_food":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
@@ -249,13 +270,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("eat_"):
         food_item = query.data.split("_")[1]
         pet["fullness"] = min(100, pet["fullness"] + 10)
+        save_pets_data()
         await safe_edit_text(
             query,
             f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!\n🍖 Текущая сытость: {pet['fullness']}%",
             reply_markup=get_food_keyboard()
         )
 
-    # --- 💧 ЖАЖДА ---
     elif query.data == "view_drink":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
@@ -280,13 +301,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("drink_"):
         drink_item = query.data.split("_")[1]
         pet["thirst"] = min(100, pet["thirst"] + 10)
+        save_pets_data()
         await safe_edit_text(
             query,
             f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!\n💧 Текущая жажда: {pet['thirst']}%",
             reply_markup=get_drink_keyboard()
         )
 
-    # --- 🚽 ПИСЯСТЬ ---
     elif query.data == "view_pee":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
@@ -307,13 +328,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         pet["pee_need"] = 0
+        save_pets_data()
         await safe_edit_text(
             query,
             f"💦 {pet['name']} успешно сходил в туалет! Потребность пописять: 0%",
             reply_markup=get_opezdol_keyboard(chat_id)
         )
 
-    # --- 💩 ПАКОСТЬ / КАКАСТЬ ---
     elif query.data == "view_poop":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
@@ -334,13 +355,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         pet["poop_need"] = 0
+        save_pets_data()
         await safe_edit_text(
             query,
             f"💩 {pet['name']} успешно сходил в туалет! Потребность покакать: 0%",
             reply_markup=get_opezdol_keyboard(chat_id)
         )
 
-    # --- 🧸 ИГРИВОСТЬ ---
     elif query.data == "view_play":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
@@ -357,15 +378,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "do_play":
         pet["play_need"] = max(0, pet["play_need"] - 30)
+        save_pets_data()
         await safe_edit_text(
             query,
             f"🧸 Вы поиграли с **{pet['name']}**!\nПотребность в играх упала до: {pet['play_need']}%\nНастроение: {get_mood_text(pet)}",
             reply_markup=get_opezdol_keyboard(chat_id)
         )
 
-    # --- 💤 СОН ---
     elif query.data == "action_sleep":
         pet["is_sleeping"] = True
+        save_pets_data()
         await safe_edit_text(
             query,
             f"💤 **{pet['name']}** сладко спит.",
@@ -374,13 +396,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "action_wake":
         pet["is_sleeping"] = False
+        save_pets_data()
         await safe_edit_text(
             query,
             f"⏰ **{pet['name']}** проснулся!",
             reply_markup=get_opezdol_keyboard(chat_id)
         )
 
-    # --- ✏️ ИМЯ ---
     elif query.data == "stat_name":
         keyboard = [
             [InlineKeyboardButton("Сменить имя ✏️", callback_data="change_name_action")],
@@ -393,6 +415,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 def main():
+    # Первым делом загружаем сохранённые данные
+    load_pets_data()
+
     request = HTTPXRequest(connect_timeout=20.0, read_timeout=20.0)
     app = Application.builder().token(TOKEN).request(request).build()
 
@@ -408,7 +433,7 @@ def main():
     app.add_handler(name_conv_handler)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🚀 Бот запущен! Динамический расчёт времени включён.")
+    print("🚀 Бот запущен! Сохранение данных в 'pets.json' работает.")
     app.run_polling()
 
 if __name__ == "__main__":
