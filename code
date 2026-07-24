@@ -33,8 +33,8 @@ def get_pet(chat_id: int) -> dict:
             "thirst": 100,          # Жажда (в %)
             "play_need": 0,         # Требование к играм (0% - доволен, 100% - скучает)
             "is_sleeping": False,   # Флаг сна
-            "pee_need": "Не хочет",
-            "poop_need": "Не хочет"
+            "pee_need": 0,          # Потребность пописять (в %)
+            "poop_need": 0          # Потребность покакать (в %)
         }
     return pets_data[chat_id]
 
@@ -115,33 +115,22 @@ def get_drink_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Проверка туалета каждые 2 часа (7200 сек)
-async def check_toilet_needs(context: ContextTypes.DEFAULT_TYPE):
+# Изменение показателей каждые 20 минут (1200 сек)
+async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     pet = get_pet(chat_id)
 
     if pet["is_sleeping"]:
         return
 
-    pet["pee_need"] = "Очень хочет!"
-    pet["poop_need"] = "Очень хочет!"
-
-    await context.bot.send_message(chat_id=chat_id, text=f"🚨 {pet['name']} хочет ссать!")
-    await context.bot.send_message(chat_id=chat_id, text=f"🚨 {pet['name']} хочет срать!")
-
-# Изменение показателей каждый час (3600 сек)
-async def decrease_stats_hourly(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-    pet = get_pet(chat_id)
-
-    if pet["is_sleeping"]:
-        return
-
-    # Убавляем голод/жажду на 10%, прибавляем желание играть на 10%
+    # Убавляем голод/жажду на 10%, прибавляем желание играть и туалет на 10%
     pet["fullness"] = max(0, pet["fullness"] - 10)
     pet["thirst"] = max(0, pet["thirst"] - 10)
     pet["play_need"] = min(100, pet["play_need"] + 10)
+    pet["pee_need"] = min(100, pet["pee_need"] + 10)
+    pet["poop_need"] = min(100, pet["poop_need"] + 10)
 
+    # Уведомления при высоких/низких показателях
     if pet["fullness"] <= 20:
         await context.bot.send_message(
             chat_id=chat_id, 
@@ -157,32 +146,30 @@ async def decrease_stats_hourly(context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text=f"🧸 {pet['name']} очень скучает! Поиграйте с ним!"
         )
+    if pet["pee_need"] >= 80:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🚨 {pet['name']} очень хочет ссать! Потребность: {pet['pee_need']}%"
+        )
+    if pet["poop_need"] >= 80:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🚨 {pet['name']} очень хочет срать! Потребность: {pet['poop_need']}%"
+        )
 
-# Настройка и запуск фоновых задач
+# Настройка и запуск фоновых задач (каждые 20 минут = 1200 секунд)
 def start_timers(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if context.job_queue is None:
         return
 
-    toilet_job = f"toilet_job_{chat_id}"
     stats_job = f"stats_job_{chat_id}"
-
-    # Если таймеры еще не запущены для данного чата — запускаем
-    current_jobs_toilet = context.job_queue.get_jobs_by_name(toilet_job)
-    if not current_jobs_toilet:
-        context.job_queue.run_repeating(
-            check_toilet_needs, 
-            interval=7200, 
-            first=7200, 
-            chat_id=chat_id, 
-            name=toilet_job
-        )
 
     current_jobs_stats = context.job_queue.get_jobs_by_name(stats_job)
     if not current_jobs_stats:
         context.job_queue.run_repeating(
-            decrease_stats_hourly, 
-            interval=3600, 
-            first=3600, 
+            decrease_stats_regularly, 
+            interval=1200, 
+            first=1200, 
             chat_id=chat_id, 
             name=stats_job
         )
@@ -264,8 +251,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         pet["play_need"] = max(0, pet["play_need"] - 30)
         await query.edit_message_text(
-            f"🧸 Вы поиграли с **{pet['name']}**!\n"
-            f"Потребность в играх упала до: {pet['play_need']}%\n"
+            f"🧸 Вы поиграли с **{pet['name']}**!
+"
+            f"Потребность в играх упала до: {pet['play_need']}%
+"
             f"Настроение: {get_mood_text(pet)}",
             parse_mode="Markdown",
             reply_markup=get_opezdol_keyboard(chat_id)
@@ -278,7 +267,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await query.edit_message_text(
-            f"🍖 Чем покормим **{pet['name']}**?\nТекущая сытость: {pet['fullness']}%",
+            f"🍖 Чем покормим **{pet['name']}**?
+Текущая сытость: {pet['fullness']}%",
             parse_mode="Markdown",
             reply_markup=get_food_keyboard()
         )
@@ -290,7 +280,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             pet["fullness"] = min(100, pet["fullness"] + 10)
             await query.edit_message_text(
-                f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!\n🍖 Текущая сытость: {pet['fullness']}%",
+                f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!
+🍖 Текущая сытость: {pet['fullness']}%",
                 parse_mode="Markdown",
                 reply_markup=get_food_keyboard()
             )
@@ -302,7 +293,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await query.edit_message_text(
-            f"💧 Чем напоим **{pet['name']}**?\nТекущая жажда: {pet['thirst']}%",
+            f"💧 Чем напоим **{pet['name']}**?
+Текущая жажда: {pet['thirst']}%",
             parse_mode="Markdown",
             reply_markup=get_drink_keyboard()
         )
@@ -314,7 +306,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             pet["thirst"] = min(100, pet["thirst"] + 10)
             await query.edit_message_text(
-                f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!\n💧 Текущая жажда: {pet['thirst']}%",
+                f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!
+💧 Текущая жажда: {pet['thirst']}%",
                 parse_mode="Markdown",
                 reply_markup=get_drink_keyboard()
             )
@@ -336,26 +329,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status_sleep = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
 
         profile_text = (
-            f"📋 **Карточка опездола:**\n\n"
-            f"👤 **Имя:** {pet['name']}\n"
-            f"💤 **Статус:** {status_sleep}\n"
-            f"🍖 **Сытость:** {pet['fullness']}%\n"
-            f"💧 **Жажда:** {pet['thirst']}%\n"
-            f"🎭 **Настроение:** {get_mood_text(pet)}\n"
-            f"🧸 **Хочет играть:** {pet['play_need']}%\n"
-            f"🚽 **Потребность пописять:** {pet['pee_need']}\n"
-            f"💩 **Потребность покакать:** {pet['poop_need']}"
+            f"📋 **Карточка опездола:**
+
+"
+            f"👤 **Имя:** {pet['name']}
+"
+            f"💤 **Статус:** {status_sleep}
+"
+            f"🍖 **Сытость:** {pet['fullness']}%
+"
+            f"💧 **Жажда:** {pet['thirst']}%
+"
+            f"🎭 **Настроение:** {get_mood_text(pet)}
+"
+            f"🧸 **Хочет играть:** {pet['play_need']}%
+"
+            f"🚽 **Хочет пописять:** {pet['pee_need']}%
+"
+            f"💩 **Хочет покакать:** {pet['poop_need']}%"
         )
         await query.message.reply_text(profile_text, parse_mode="Markdown", reply_markup=get_opezdol_keyboard(chat_id))
 
     # --- Туалет ---
     elif query.data == "stat_pee":
-        pet["pee_need"] = "Не хочет"
-        await query.message.reply_text(f"💦 {pet['name']} пописал и доволен!")
+        if pet["is_sleeping"]:
+            await query.answer("Опездол спит!", show_alert=True)
+            return
+        if pet["pee_need"] == 0:
+            await query.answer(f"{pet['name']} совсееем не хочет писять!", show_alert=True)
+            return
+        
+        reduced = min(50, pet["pee_need"])
+        pet["pee_need"] -= reduced
+        await query.message.reply_text(
+            f"💦 {pet['name']} пописал! Потребность снизилась на {reduced}% (теперь: {pet['pee_need']}%)."
+        )
 
     elif query.data == "stat_poop":
-        pet["poop_need"] = "Не хочет"
-        await query.message.reply_text(f"💩 {pet['name']} покакал и доволен!")
+        if pet["is_sleeping"]:
+            await query.answer("Опездол спит!", show_alert=True)
+            return
+        if pet["poop_need"] == 0:
+            await query.answer(f"{pet['name']} совсееем не хочет какать!", show_alert=True)
+            return
+            
+        reduced = min(50, pet["poop_need"])
+        pet["poop_need"] -= reduced
+        await query.message.reply_text(
+            f"💩 {pet['name']} покакал! Потребность снизилась на {reduced}% (теперь: {pet['poop_need']}%)."
+        )
 
 def main():
     app = Application.builder().token(TOKEN).build()
