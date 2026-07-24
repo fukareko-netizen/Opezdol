@@ -137,7 +137,7 @@ async def decrease_stats_hourly(context: ContextTypes.DEFAULT_TYPE):
     if pet["is_sleeping"]:
         return
 
-    # Убавляем голод/жажду на 10%, убавляем радость от игр на 10%
+    # Убавляем голод/жажду на 10%, прибавляем желание играть на 10%
     pet["fullness"] = max(0, pet["fullness"] - 10)
     pet["thirst"] = max(0, pet["thirst"] - 10)
     pet["play_need"] = min(100, pet["play_need"] + 10)
@@ -158,20 +158,34 @@ async def decrease_stats_hourly(context: ContextTypes.DEFAULT_TYPE):
             text=f"🧸 {pet['name']} очень скучает! Поиграйте с ним!"
         )
 
-# Запуск фоновых таймеров
+# Настройка и запуск фоновых задач
 def start_timers(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if context.job_queue is None:
         return
 
     toilet_job = f"toilet_job_{chat_id}"
-    for job in context.job_queue.get_jobs_by_name(toilet_job):
-        job.schedule_removal()
-    context.job_queue.run_repeating(check_toilet_needs, interval=7200, first=7200, chat_id=chat_id, name=toilet_job)
-
     stats_job = f"stats_job_{chat_id}"
-    for job in context.job_queue.get_jobs_by_name(stats_job):
-        job.schedule_removal()
-    context.job_queue.run_repeating(decrease_stats_hourly, interval=3600, first=3600, chat_id=chat_id, name=stats_job)
+
+    # Если таймеры еще не запущены для данного чата — запускаем
+    current_jobs_toilet = context.job_queue.get_jobs_by_name(toilet_job)
+    if not current_jobs_toilet:
+        context.job_queue.run_repeating(
+            check_toilet_needs, 
+            interval=7200, 
+            first=7200, 
+            chat_id=chat_id, 
+            name=toilet_job
+        )
+
+    current_jobs_stats = context.job_queue.get_jobs_by_name(stats_job)
+    if not current_jobs_stats:
+        context.job_queue.run_repeating(
+            decrease_stats_hourly, 
+            interval=3600, 
+            first=3600, 
+            chat_id=chat_id, 
+            name=stats_job
+        )
 
 async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[
@@ -210,6 +224,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
     pet = get_pet(chat_id)
+    
+    # Подстраховка таймеров
+    start_timers(context, chat_id)
     await query.answer()
 
     if query.data == "no":
@@ -217,7 +234,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "yes":
         await query.edit_message_text("Ваш опездол родился! управляйте им через команду /opezdol")
-        start_timers(context, chat_id)
         await query.message.reply_text("Здесь разукрась его как хочешь", reply_markup=get_opezdol_keyboard(chat_id))
 
     elif query.data == "back_to_menu":
