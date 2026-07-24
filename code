@@ -24,21 +24,19 @@ WAITING_FOR_NAME = 1
 # Хранилище данных всех питомцев: {chat_id: {характеристики_питомца}}
 pets_data = {}
 
-# Получить или создать питомца для конкретного чата
 def get_pet(chat_id: int) -> dict:
     if chat_id not in pets_data:
         pets_data[chat_id] = {
             "name": "Опездол",
-            "fullness": 100,        # Сытость (в %)
-            "thirst": 100,          # Жажда (в %)
-            "play_need": 0,         # Требование к играм (0% - доволен, 100% - скучает)
-            "is_sleeping": False,   # Флаг сна
-            "pee_need": 0,          # Потребность пописять (в %)
-            "poop_need": 0          # Потребность покакать (в %)
+            "fullness": 100,        # Сытость (%)
+            "thirst": 100,          # Жажда (%)
+            "play_need": 0,         # Скука (0% - весел, 100% - скучает)
+            "is_sleeping": False,   # Спит ли
+            "pee_need": 0,          # Хочет пописять (%)
+            "poop_need": 0          # Хочет покакать (%)
         }
     return pets_data[chat_id]
 
-# Расчет настроения по шкале игр
 def get_mood_text(pet: dict) -> str:
     need = pet["play_need"]
     if need <= 20:
@@ -50,7 +48,6 @@ def get_mood_text(pet: dict) -> str:
     else:
         return "Ужасное / Очень скучает 😭"
 
-# Главное меню управления опездолом
 def get_opezdol_keyboard(chat_id: int):
     pet = get_pet(chat_id)
     sleep_button = (
@@ -77,7 +74,6 @@ def get_opezdol_keyboard(chat_id: int):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Меню выбора еды
 def get_food_keyboard():
     keyboard = [
         [
@@ -96,7 +92,6 @@ def get_food_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Меню выбора напитков
 def get_drink_keyboard():
     keyboard = [
         [
@@ -115,7 +110,7 @@ def get_drink_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Изменение показателей каждые 20 минут (1200 сек)
+# ТАЙМЕР: срабатывает каждые 60 секунд (1 минуту)
 async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     pet = get_pet(chat_id)
@@ -123,14 +118,14 @@ async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
     if pet["is_sleeping"]:
         return
 
-    # Убавляем голод/жажду на 10%, прибавляем желание играть и туалет на 10%
+    # Изменяем показатели
     pet["fullness"] = max(0, pet["fullness"] - 10)
     pet["thirst"] = max(0, pet["thirst"] - 10)
     pet["play_need"] = min(100, pet["play_need"] + 10)
     pet["pee_need"] = min(100, pet["pee_need"] + 10)
     pet["poop_need"] = min(100, pet["poop_need"] + 10)
 
-    # Уведомления при высоких/низких показателях
+    # Уведомления при достижении критических меток
     if pet["fullness"] <= 20:
         await context.bot.send_message(
             chat_id=chat_id, 
@@ -157,24 +152,27 @@ async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
             text=f"🚨 {pet['name']} очень хочет срать! Потребность: {pet['poop_need']}%"
         )
 
-# Настройка и запуск фоновых задач (каждые 20 минут = 1200 секунд)
-def start_timers(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+# Функция гарантированного запуска фоновой задачи
+def ensure_timer_running(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if context.job_queue is None:
         return
 
-    stats_job = f"stats_job_{chat_id}"
-
-    current_jobs_stats = context.job_queue.get_jobs_by_name(stats_job)
-    if not current_jobs_stats:
+    job_name = f"stats_job_{chat_id}"
+    current_jobs = context.job_queue.get_jobs_by_name(job_name)
+    
+    if not current_jobs:
+        # Установлено на 60 секунд для быстрых тестов
         context.job_queue.run_repeating(
             decrease_stats_regularly, 
-            interval=1200, 
-            first=1200, 
+            interval=60, 
+            first=60, 
             chat_id=chat_id, 
-            name=stats_job
+            name=job_name
         )
 
 async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    ensure_timer_running(context, chat_id)
     keyboard = [[
         InlineKeyboardButton("Да", callback_data="yes"),
         InlineKeyboardButton("Нет", callback_data="no")
@@ -183,7 +181,7 @@ async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def opezdol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    start_timers(context, chat_id)
+    ensure_timer_running(context, chat_id)
     await update.message.reply_text("Здесь разукрась его как хочешь", reply_markup=get_opezdol_keyboard(chat_id))
 
 async def start_change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -206,14 +204,13 @@ async def save_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-# Главный обработчик кнопок
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
     pet = get_pet(chat_id)
     
-    # Подстраховка таймеров
-    start_timers(context, chat_id)
+    # Всегда проверяем таймер при кликах
+    ensure_timer_running(context, chat_id)
     await query.answer()
 
     if query.data == "no":
@@ -226,7 +223,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_to_menu":
         await query.edit_message_text("Здесь разукрась его как хочешь", reply_markup=get_opezdol_keyboard(chat_id))
 
-    # --- Управление сном ---
     elif query.data == "action_sleep":
         pet["is_sleeping"] = True
         await query.edit_message_text(
@@ -243,7 +239,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_opezdol_keyboard(chat_id)
         )
 
-    # --- Игривость ---
     elif query.data == "action_play":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит! Сначала разбуди его.", show_alert=True)
@@ -258,7 +253,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_opezdol_keyboard(chat_id)
         )
 
-    # --- Еда ---
     elif query.data == "menu_food":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит! Нельзя кормить во сне.", show_alert=True)
@@ -282,7 +276,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_food_keyboard()
             )
 
-    # --- Напитки ---
     elif query.data == "menu_drink":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит! Нельзя поить во сне.", show_alert=True)
@@ -306,7 +299,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_drink_keyboard()
             )
 
-    # --- Имя ---
     elif query.data == "stat_name":
         keyboard = [
             [InlineKeyboardButton("Сменить имя ✏️", callback_data="change_name_action")],
@@ -318,7 +310,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # --- Профиль ---
     elif query.data == "stat_profile":
         status_sleep = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
 
@@ -335,7 +326,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.message.reply_text(profile_text, parse_mode="Markdown", reply_markup=get_opezdol_keyboard(chat_id))
 
-    # --- Туалет ---
     elif query.data == "stat_pee":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
@@ -378,7 +368,7 @@ def main():
     app.add_handler(name_conv_handler)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🚀 Бот запущен!")
+    print("🚀 Бот запущен! Таймеры работают раз в 60 секунд.")
     app.run_polling()
 
 if __name__ == "__main__":
