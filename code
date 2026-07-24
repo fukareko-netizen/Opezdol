@@ -10,44 +10,38 @@ from telegram.ext import (
     filters,
 )
 
-# Настройка логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
     level=logging.INFO
 )
 
-# ⚠️ ВСТАВЬ СЮДА ТОКЕН ОТ @BotFather
+# ⚠️ Вставь сюда новый токен из @BotFather
 TOKEN = "8533045475:AAFzx_W8gM6ghEL10HfHlhzx_alEmsVmzTg"
 
 WAITING_FOR_NAME = 1
-
-# Хранилище данных всех питомцев: {chat_id: {характеристики_питомца}}
 pets_data = {}
 
 def get_pet(chat_id: int) -> dict:
     if chat_id not in pets_data:
         pets_data[chat_id] = {
             "name": "Опездол",
-            "fullness": 100,        # Сытость (%)
-            "thirst": 100,          # Жажда (%)
-            "play_need": 0,         # Скука (0% - весел, 100% - скучает)
-            "is_sleeping": False,   # Спит ли
-            "pee_need": 0,          # Хочет пописять (%)
-            "poop_need": 0          # Хочет покакать (%)
+            "fullness": 100,
+            "thirst": 100,
+            "play_need": 0,
+            "is_sleeping": False,
+            "pee_need": 0,
+            "poop_need": 0
         }
     return pets_data[chat_id]
 
 def get_mood_text(pet: dict) -> str:
     need = pet["play_need"]
-    if need <= 20:
-        return "Отличное 😸"
-    elif need <= 50:
-        return "Нормальное 😐"
-    elif need <= 80:
-        return "Грустное 😿"
-    else:
-        return "Ужасное / Очень скучает 😭"
+    if need <= 20: return "Отличное 😸"
+    elif need <= 50: return "Нормальное 😐"
+    elif need <= 80: return "Грустное 😿"
+    else: return "Ужасное / Очень скучает 😭"
 
+# Главное меню
 def get_opezdol_keyboard(chat_id: int):
     pet = get_pet(chat_id)
     sleep_button = (
@@ -57,23 +51,24 @@ def get_opezdol_keyboard(chat_id: int):
     )
 
     keyboard = [
-        [InlineKeyboardButton("Личность 🪪", callback_data="stat_profile")],
+        [InlineKeyboardButton("Личность 🪪", callback_data="view_profile")],
         [
-            InlineKeyboardButton("Голод 🍎", callback_data="menu_food"),
-            InlineKeyboardButton("Жажда 💧", callback_data="menu_drink"),
+            InlineKeyboardButton("Голод 🍎", callback_data="view_food"),
+            InlineKeyboardButton("Жажда 💧", callback_data="view_drink"),
         ],
         [
-            InlineKeyboardButton("Какасть 💩", callback_data="stat_poop"),
-            InlineKeyboardButton("Писясть 🚽", callback_data="stat_pee"),
+            InlineKeyboardButton("Писясть 🚽", callback_data="view_pee"),
+            InlineKeyboardButton("Пакость / Какасть 💩", callback_data="view_poop"),
         ],
         [
-            InlineKeyboardButton("Игривость 🧸", callback_data="action_play"),
+            InlineKeyboardButton("Игривость 🧸", callback_data="view_play"),
             sleep_button
         ],
         [InlineKeyboardButton("Имя ✏️", callback_data="stat_name")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# Меню выбора еды
 def get_food_keyboard():
     keyboard = [
         [
@@ -92,6 +87,7 @@ def get_food_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# Меню выбора напитков
 def get_drink_keyboard():
     keyboard = [
         [
@@ -110,7 +106,7 @@ def get_drink_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# ТАЙМЕР: срабатывает каждые 60 секунд (1 минуту)
+# ТАЙМЕР: капает каждые 10 секунд (для тестов)
 async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     pet = get_pet(chat_id)
@@ -118,29 +114,12 @@ async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
     if pet["is_sleeping"]:
         return
 
-    # Изменяем показатели
     pet["fullness"] = max(0, pet["fullness"] - 10)
     pet["thirst"] = max(0, pet["thirst"] - 10)
     pet["play_need"] = min(100, pet["play_need"] + 10)
-    pet["pee_need"] = min(100, pet["pee_need"] + 10)
-    pet["poop_need"] = min(100, pet["poop_need"] + 10)
+    pet["pee_need"] = min(100, pet["pee_need"] + 15)
+    pet["poop_need"] = min(100, pet["poop_need"] + 15)
 
-    # Уведомления при достижении критических меток
-    if pet["fullness"] <= 20:
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=f"⚠️ {pet['name']} очень голоден! Сытость: {pet['fullness']}%"
-        )
-    if pet["thirst"] <= 20:
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=f"⚠️ {pet['name']} хочет пить! Жажда: {pet['thirst']}%"
-        )
-    if pet["play_need"] >= 80:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"🧸 {pet['name']} очень скучает! Поиграйте с ним!"
-        )
     if pet["pee_need"] >= 80:
         await context.bot.send_message(
             chat_id=chat_id,
@@ -152,7 +131,6 @@ async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
             text=f"🚨 {pet['name']} очень хочет срать! Потребность: {pet['poop_need']}%"
         )
 
-# Функция гарантированного запуска фоновой задачи
 def ensure_timer_running(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if context.job_queue is None:
         return
@@ -161,11 +139,10 @@ def ensure_timer_running(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     current_jobs = context.job_queue.get_jobs_by_name(job_name)
     
     if not current_jobs:
-        # Установлено на 60 секунд для быстрых тестов
         context.job_queue.run_repeating(
             decrease_stats_regularly, 
-            interval=60, 
-            first=60, 
+            interval=10, 
+            first=10, 
             chat_id=chat_id, 
             name=job_name
         )
@@ -193,7 +170,6 @@ async def start_change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def save_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     pet = get_pet(chat_id)
-    
     new_name = update.message.text.strip()
     pet["name"] = new_name
     
@@ -209,7 +185,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat_id
     pet = get_pet(chat_id)
     
-    # Всегда проверяем таймер при кликах
     ensure_timer_running(context, chat_id)
     await query.answer()
 
@@ -223,96 +198,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_to_menu":
         await query.edit_message_text("Здесь разукрась его как хочешь", reply_markup=get_opezdol_keyboard(chat_id))
 
-    elif query.data == "action_sleep":
-        pet["is_sleeping"] = True
-        await query.edit_message_text(
-            f"💤 **{pet['name']}** сладко спит. Все характеристики заморожены!",
-            parse_mode="Markdown",
-            reply_markup=get_opezdol_keyboard(chat_id)
-        )
-
-    elif query.data == "action_wake":
-        pet["is_sleeping"] = False
-        await query.edit_message_text(
-            f"⏰ **{pet['name']}** проснулся и готов играть!",
-            parse_mode="Markdown",
-            reply_markup=get_opezdol_keyboard(chat_id)
-        )
-
-    elif query.data == "action_play":
-        if pet["is_sleeping"]:
-            await query.answer("Опездол спит! Сначала разбуди его.", show_alert=True)
-            return
-
-        pet["play_need"] = max(0, pet["play_need"] - 30)
-        await query.edit_message_text(
-            f"🧸 Вы поиграли с **{pet['name']}**!\n"
-            f"Потребность в играх упала до: {pet['play_need']}%\n"
-            f"Настроение: {get_mood_text(pet)}",
-            parse_mode="Markdown",
-            reply_markup=get_opezdol_keyboard(chat_id)
-        )
-
-    elif query.data == "menu_food":
-        if pet["is_sleeping"]:
-            await query.answer("Опездол спит! Нельзя кормить во сне.", show_alert=True)
-            return
-
-        await query.edit_message_text(
-            f"🍖 Чем покормим **{pet['name']}**?\nТекущая сытость: {pet['fullness']}%",
-            parse_mode="Markdown",
-            reply_markup=get_food_keyboard()
-        )
-
-    elif query.data.startswith("eat_"):
-        food_item = query.data.split("_")[1]
-        if pet["fullness"] >= 100:
-            await query.answer("Опездол уже полностью сыт!", show_alert=True)
-        else:
-            pet["fullness"] = min(100, pet["fullness"] + 10)
-            await query.edit_message_text(
-                f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!\n🍖 Текущая сытость: {pet['fullness']}%",
-                parse_mode="Markdown",
-                reply_markup=get_food_keyboard()
-            )
-
-    elif query.data == "menu_drink":
-        if pet["is_sleeping"]:
-            await query.answer("Опездол спит! Нельзя поить во сне.", show_alert=True)
-            return
-
-        await query.edit_message_text(
-            f"💧 Чем напоим **{pet['name']}**?\nТекущая жажда: {pet['thirst']}%",
-            parse_mode="Markdown",
-            reply_markup=get_drink_keyboard()
-        )
-
-    elif query.data.startswith("drink_"):
-        drink_item = query.data.split("_")[1]
-        if pet["thirst"] >= 100:
-            await query.answer("Опездол уже не хочет пить!", show_alert=True)
-        else:
-            pet["thirst"] = min(100, pet["thirst"] + 10)
-            await query.edit_message_text(
-                f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!\n💧 Текущая жажда: {pet['thirst']}%",
-                parse_mode="Markdown",
-                reply_markup=get_drink_keyboard()
-            )
-
-    elif query.data == "stat_name":
-        keyboard = [
-            [InlineKeyboardButton("Сменить имя ✏️", callback_data="change_name_action")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")]
-        ]
-        await query.edit_message_text(
-            f"Текущее имя опездола: **{pet['name']}**", 
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-    elif query.data == "stat_profile":
+    # --- 🪪 ЛИЧНОСТЬ (Просто просмотр статуса) ---
+    elif query.data == "view_profile":
         status_sleep = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
-
         profile_text = (
             f"📋 **Карточка опездола:**\n\n"
             f"👤 **Имя:** {pet['name']}\n"
@@ -324,34 +212,174 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🚽 **Хочет пописять:** {pet['pee_need']}%\n"
             f"💩 **Хочет покакать:** {pet['poop_need']}%"
         )
-        await query.message.reply_text(profile_text, parse_mode="Markdown", reply_markup=get_opezdol_keyboard(chat_id))
+        await query.edit_message_text(profile_text, parse_mode="Markdown", reply_markup=get_opezdol_keyboard(chat_id))
 
-    elif query.data == "stat_pee":
+    # --- 🍎 ГОЛОД (1 шаг: просмотр -> 2 шаг: меню еды) ---
+    elif query.data == "view_food":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
             return
-        if pet["pee_need"] == 0:
-            await query.answer(f"{pet['name']} совсееем не хочет писять!", show_alert=True)
-            return
-        
-        reduced = min(50, pet["pee_need"])
-        pet["pee_need"] -= reduced
-        await query.message.reply_text(
-            f"💦 {pet['name']} пописал! Потребность снизилась на {reduced}% (теперь: {pet['pee_need']}%)."
+        keyboard = [
+            [InlineKeyboardButton("Выбрать еду 🍲", callback_data="open_food_menu")],
+            [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]
+        ]
+        await query.edit_message_text(
+            f"🍎 **Статус голода:**\nТекущая сытость: **{pet['fullness']}%**",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    elif query.data == "stat_poop":
+    elif query.data == "open_food_menu":
+        await query.edit_message_text(
+            f"🍖 Чем покормим **{pet['name']}**?\nСытость: {pet['fullness']}%",
+            parse_mode="Markdown",
+            reply_markup=get_food_keyboard()
+        )
+
+    elif query.data.startswith("eat_"):
+        food_item = query.data.split("_")[1]
+        pet["fullness"] = min(100, pet["fullness"] + 10)
+        await query.edit_message_text(
+            f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!\n🍖 Текущая сытость: {pet['fullness']}%",
+            parse_mode="Markdown",
+            reply_markup=get_food_keyboard()
+        )
+
+    # --- 💧 ЖАЖДА (1 шаг: просмотр -> 2 шаг: меню напитков) ---
+    elif query.data == "view_drink":
         if pet["is_sleeping"]:
             await query.answer("Опездол спит!", show_alert=True)
             return
+        keyboard = [
+            [InlineKeyboardButton("Выбрать напиток 🥤", callback_data="open_drink_menu")],
+            [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]
+        ]
+        await query.edit_message_text(
+            f"💧 **Статус жажды:**\nТекущая жажда: **{pet['thirst']}%**",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif query.data == "open_drink_menu":
+        await query.edit_message_text(
+            f"💧 Чем напоим **{pet['name']}**?\nЖажда: {pet['thirst']}%",
+            parse_mode="Markdown",
+            reply_markup=get_drink_keyboard()
+        )
+
+    elif query.data.startswith("drink_"):
+        drink_item = query.data.split("_")[1]
+        pet["thirst"] = min(100, pet["thirst"] + 10)
+        await query.edit_message_text(
+            f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!\n💧 Текущая жажда: {pet['thirst']}%",
+            parse_mode="Markdown",
+            reply_markup=get_drink_keyboard()
+        )
+
+    # --- 🚽 ПИСЯСТЬ (1 шаг: просмотр -> 2 шаг: кнопка пописять) ---
+    elif query.data == "view_pee":
+        if pet["is_sleeping"]:
+            await query.answer("Опездол спит!", show_alert=True)
+            return
+        keyboard = [
+            [InlineKeyboardButton("Пописять 🚽", callback_data="do_pee")],
+            [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]
+        ]
+        await query.edit_message_text(
+            f"🚽 **Нужда пописять:** **{pet['pee_need']}%**",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif query.data == "do_pee":
+        if pet["pee_need"] == 0:
+            await query.answer(f"{pet['name']} вообще не хочет писять!", show_alert=True)
+            return
+        
+        pet["pee_need"] = 0
+        await query.edit_message_text(
+            f"💦 {pet['name']} успешно сходил в туалет! Потребность пописять: 0%",
+            reply_markup=get_opezdol_keyboard(chat_id)
+        )
+
+    # --- 💩 ПАКОСТЬ / КАКАСТЬ (1 шаг: просмотр -> 2 шаг: кнопка покакать) ---
+    elif query.data == "view_poop":
+        if pet["is_sleeping"]:
+            await query.answer("Опездол спит!", show_alert=True)
+            return
+        keyboard = [
+            [InlineKeyboardButton("Покакать 💩", callback_data="do_poop")],
+            [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]
+        ]
+        await query.edit_message_text(
+            f"💩 **Нужда покакать:** **{pet['poop_need']}%**",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif query.data == "do_poop":
         if pet["poop_need"] == 0:
-            await query.answer(f"{pet['name']} совсееем не хочет какать!", show_alert=True)
+            await query.answer(f"{pet['name']} вообще не хочет какать!", show_alert=True)
             return
             
-        reduced = min(50, pet["poop_need"])
-        pet["poop_need"] -= reduced
-        await query.message.reply_text(
-            f"💩 {pet['name']} покакал! Потребность снизилась на {reduced}% (теперь: {pet['poop_need']}%)."
+        pet["poop_need"] = 0
+        await query.edit_message_text(
+            f"💩 {pet['name']} успешно сходил в туалет! Потребность покакать: 0%",
+            reply_markup=get_opezdol_keyboard(chat_id)
+        )
+
+    # --- 🧸 ИГРИВОСТЬ (1 шаг: просмотр -> 2 шаг: кнопка поиграть) ---
+    elif query.data == "view_play":
+        if pet["is_sleeping"]:
+            await query.answer("Опездол спит!", show_alert=True)
+            return
+        keyboard = [
+            [InlineKeyboardButton("Поиграть 🧸", callback_data="do_play")],
+            [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]
+        ]
+        await query.edit_message_text(
+            f"🧸 **Уровень скуки:** **{pet['play_need']}%**\nНастроение: {get_mood_text(pet)}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif query.data == "do_play":
+        pet["play_need"] = max(0, pet["play_need"] - 30)
+        await query.edit_message_text(
+            f"🧸 Вы поиграли с **{pet['name']}**!\n"
+            f"Потребность в играх упала до: {pet['play_need']}%\n"
+            f"Настроение: {get_mood_text(pet)}",
+            parse_mode="Markdown",
+            reply_markup=get_opezdol_keyboard(chat_id)
+        )
+
+    # --- 💤 СОН ---
+    elif query.data == "action_sleep":
+        pet["is_sleeping"] = True
+        await query.edit_message_text(
+            f"💤 **{pet['name']}** сладко спит.",
+            parse_mode="Markdown",
+            reply_markup=get_opezdol_keyboard(chat_id)
+        )
+
+    elif query.data == "action_wake":
+        pet["is_sleeping"] = False
+        await query.edit_message_text(
+            f"⏰ **{pet['name']}** проснулся!",
+            parse_mode="Markdown",
+            reply_markup=get_opezdol_keyboard(chat_id)
+        )
+
+    # --- ✏️ ИМЯ ---
+    elif query.data == "stat_name":
+        keyboard = [
+            [InlineKeyboardButton("Сменить имя ✏️", callback_data="change_name_action")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")]
+        ]
+        await query.edit_message_text(
+            f"Текущее имя: **{pet['name']}**", 
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
 def main():
@@ -368,7 +396,7 @@ def main():
     app.add_handler(name_conv_handler)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🚀 Бот запущен! Таймеры работают раз в 60 секунд.")
+    print("🚀 Бот запущен! Двухшаговое меню готово.")
     app.run_polling()
 
 if __name__ == "__main__":
