@@ -251,10 +251,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         pet["play_need"] = max(0, pet["play_need"] - 30)
         await query.edit_message_text(
-            f"🧸 Вы поиграли с **{pet['name']}**!
-"
-            f"Потребность в играх упала до: {pet['play_need']}%
-"
+            f"🧸 Вы поиграли с **{pet['name']}**!\n"
+            f"Потребность в играх упала до: {pet['play_need']}%\n"
             f"Настроение: {get_mood_text(pet)}",
             parse_mode="Markdown",
             reply_markup=get_opezdol_keyboard(chat_id)
@@ -267,8 +265,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await query.edit_message_text(
-            f"🍖 Чем покормим **{pet['name']}**?
-Текущая сытость: {pet['fullness']}%",
+            f"🍖 Чем покормим **{pet['name']}**?\nТекущая сытость: {pet['fullness']}%",
             parse_mode="Markdown",
             reply_markup=get_food_keyboard()
         )
@@ -280,8 +277,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             pet["fullness"] = min(100, pet["fullness"] + 10)
             await query.edit_message_text(
-                f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!
-🍖 Текущая сытость: {pet['fullness']}%",
+                f"😋 {pet['name']} съел **{food_item}** (+10% сытости)!\n🍖 Текущая сытость: {pet['fullness']}%",
                 parse_mode="Markdown",
                 reply_markup=get_food_keyboard()
             )
@@ -293,8 +289,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await query.edit_message_text(
-            f"💧 Чем напоим **{pet['name']}**?
-Текущая жажда: {pet['thirst']}%",
+            f"💧 Чем напоим **{pet['name']}**?\nТекущая жажда: {pet['thirst']}%",
             parse_mode="Markdown",
             reply_markup=get_drink_keyboard()
         )
@@ -306,8 +301,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             pet["thirst"] = min(100, pet["thirst"] + 10)
             await query.edit_message_text(
-                f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!
-💧 Текущая жажда: {pet['thirst']}%",
+                f"🥤 {pet['name']} выпил **{drink_item}** (+10% жажды)!\n💧 Текущая жажда: {pet['thirst']}%",
                 parse_mode="Markdown",
                 reply_markup=get_drink_keyboard()
             )
@@ -329,23 +323,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status_sleep = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
 
         profile_text = (
-            f"📋 **Карточка опездола:**
-
-"
-            f"👤 **Имя:** {pet['name']}
-"
-            f"💤 **Статус:** {status_sleep}
-"
-            f"🍖 **Сытость:** {pet['fullness']}%
-"
-            f"💧 **Жажда:** {pet['thirst']}%
-"
-            f"🎭 **Настроение:** {get_mood_text(pet)}
-"
-            f"🧸 **Хочет играть:** {pet['play_need']}%
-"
-            f"🚽 **Хочет пописять:** {pet['pee_need']}%
-"
+            f"📋 **Карточка опездола:**\n\n"
+            f"👤 **Имя:** {pet['name']}\n"
+            f"💤 **Статус:** {status_sleep}\n"
+            f"🍖 **Сытость:** {pet['fullness']}%\n"
+            f"💧 **Жажда:** {pet['thirst']}%\n"
+            f"🎭 **Настроение:** {get_mood_text(pet)}\n"
+            f"🧸 **Хочет играть:** {pet['play_need']}%\n"
+            f"🚽 **Хочет пописять:** {pet['pee_need']}%\n"
             f"💩 **Хочет покакать:** {pet['poop_need']}%"
         )
         await query.message.reply_text(profile_text, parse_mode="Markdown", reply_markup=get_opezdol_keyboard(chat_id))
