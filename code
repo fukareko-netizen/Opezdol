@@ -25,7 +25,7 @@ pets_data = {}
 
 # Скорость падения характеристик (в секундах)
 # 10.0 = каждые 10 секунд цифры меняются (для теста)
-INTERVAL_SECONDS = 10.0 
+INTERVAL_SECONDS = 1200.0 
 
 def get_pet(chat_id: int) -> dict:
     if chat_id not in pets_data:
