@@ -1,4 +1,5 @@
 import logging
+import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -22,6 +23,10 @@ TOKEN = "8533045475:AAFzx_W8gM6ghEL10HfHlhzx_alEmsVmzTg"
 WAITING_FOR_NAME = 1
 pets_data = {}
 
+# Скорость падения характеристик (в секундах)
+# 10.0 = каждые 10 секунд цифры меняются (для теста)
+INTERVAL_SECONDS = 10.0 
+
 def get_pet(chat_id: int) -> dict:
     if chat_id not in pets_data:
         pets_data[chat_id] = {
@@ -31,9 +36,36 @@ def get_pet(chat_id: int) -> dict:
             "play_need": 0,
             "is_sleeping": False,
             "pee_need": 0,
-            "poop_need": 0
+            "poop_need": 0,
+            "last_update": time.time()  # Фиксируем время создания
         }
     return pets_data[chat_id]
+
+def update_pet_stats(chat_id: int):
+    """
+    Автоматически пересчитывает характеристики опездола 
+    на основе прошедшего с прошлого раза времени.
+    """
+    pet = get_pet(chat_id)
+    if pet["is_sleeping"]:
+        pet["last_update"] = time.time()
+        return
+
+    now = time.time()
+    elapsed = now - pet["last_update"]
+
+    # Сколько интервалов по 10 секунд прошло
+    ticks = int(elapsed // INTERVAL_SECONDS)
+
+    if ticks > 0:
+        pet["fullness"] = max(0, pet["fullness"] - (10 * ticks))
+        pet["thirst"] = max(0, pet["thirst"] - (10 * ticks))
+        pet["play_need"] = min(100, pet["play_need"] + (10 * ticks))
+        pet["pee_need"] = min(100, pet["pee_need"] + (15 * ticks))
+        pet["poop_need"] = min(100, pet["poop_need"] + (15 * ticks))
+        
+        # Обновляем время только на учтенные «тики»
+        pet["last_update"] += ticks * INTERVAL_SECONDS
 
 def get_mood_text(pet: dict) -> str:
     need = pet["play_need"]
@@ -43,7 +75,6 @@ def get_mood_text(pet: dict) -> str:
     else: return "Ужасное / Очень скучает 😭"
 
 def get_menu_text(pet: dict) -> str:
-    """Генерирует уникальный текст для главного меню, чтобы Telegram не выдавал ошибки"""
     status = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
     return f"👾 **Главное меню: {pet['name']}**\nСтатус: {status}\nВыбери действие ниже:"
 
@@ -109,70 +140,20 @@ def get_drink_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# ТАЙМЕР: Раз в 10 секунд (меняй 10 на нужное кол-во секунд)
-async def decrease_stats_regularly(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-    pet = get_pet(chat_id)
-
-    if pet["is_sleeping"]:
-        return
-
-    pet["fullness"] = max(0, pet["fullness"] - 10)
-    pet["thirst"] = max(0, pet["thirst"] - 10)
-    pet["play_need"] = min(100, pet["play_need"] + 10)
-    pet["pee_need"] = min(100, pet["pee_need"] + 15)
-    pet["poop_need"] = min(100, pet["poop_need"] + 15)
-
-    if pet["pee_need"] >= 80:
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚨 {pet['name']} очень хочет ссать! Потребность: {pet['pee_need']}%"
-            )
-        except Exception:
-            pass
-
-    if pet["poop_need"] >= 80:
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚨 {pet['name']} очень хочет срать! Потребность: {pet['poop_need']}%"
-            )
-        except Exception:
-            pass
-
-def ensure_timer_running(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-    if context.job_queue is None:
-        return
-
-    job_name = f"stats_job_{chat_id}"
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    
-    if not current_jobs:
-        # Таймер настроен на 10 секунд
-        context.job_queue.run_repeating(
-            decrease_stats_regularly, 
-            interval=10, 
-            first=10, 
-            chat_id=chat_id, 
-            name=job_name
-        )
-
 async def safe_edit_text(query, text, reply_markup=None, parse_mode="Markdown"):
-    """Безопасное редактирование сообщений с защитой от ошибок Telegram"""
     try:
         await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
     except BadRequest as e:
         if "Message is not modified" in str(e):
-            pass # Если текст тот же, просто игнорируем
+            pass
         else:
             raise e
     except TimedOut:
-        pass # Игнорируем временные тайм-ауты сети
+        pass
 
 async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    ensure_timer_running(context, chat_id)
+    update_pet_stats(chat_id)
     keyboard = [[
         InlineKeyboardButton("Да", callback_data="yes"),
         InlineKeyboardButton("Нет", callback_data="no")
@@ -181,7 +162,7 @@ async def pet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def opezdol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    ensure_timer_running(context, chat_id)
+    update_pet_stats(chat_id)
     pet = get_pet(chat_id)
     await update.message.reply_text(get_menu_text(pet), reply_markup=get_opezdol_keyboard(chat_id), parse_mode="Markdown")
 
@@ -207,9 +188,11 @@ async def save_new_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
+    
+    # ПЕРЕСЧИТЫВАЕМ СТАТИСТИКУ ПЕРЕД ЛЮБЫМ ДЕЙСТВИЕМ
+    update_pet_stats(chat_id)
     pet = get_pet(chat_id)
     
-    ensure_timer_running(context, chat_id)
     try:
         await query.answer()
     except Exception:
@@ -225,7 +208,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_to_menu":
         await safe_edit_text(query, get_menu_text(pet), reply_markup=get_opezdol_keyboard(chat_id))
 
-    # --- 🪪 ЛИЧНОСТЬ (Просмотр) ---
+    # --- 🪪 ЛИЧНОСТЬ ---
     elif query.data == "view_profile":
         status_sleep = "😴 Спит" if pet["is_sleeping"] else "👁️ Бодрствует"
         profile_text = (
@@ -410,7 +393,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 def main():
-    # Увеличиваем таймаут запросов до 20 секунд для нестабильного соединения
     request = HTTPXRequest(connect_timeout=20.0, read_timeout=20.0)
     app = Application.builder().token(TOKEN).request(request).build()
 
@@ -418,6 +400,7 @@ def main():
         entry_points=[CallbackQueryHandler(start_change_name, pattern="^change_name_action$")],
         states={WAITING_FOR_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_new_name)]},
         fallbacks=[],
+        per_message=False
     )
 
     app.add_handler(CommandHandler("pet", pet_command))
@@ -425,7 +408,7 @@ def main():
     app.add_handler(name_conv_handler)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🚀 Бот запущен! Все ошибки отловлены.")
+    print("🚀 Бот запущен! Динамический расчёт времени включён.")
     app.run_polling()
 
 if __name__ == "__main__":
